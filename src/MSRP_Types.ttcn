@@ -1,0 +1,324 @@
+/******************************************************************************
+* Copyright (c) 2005, 2015  Ericsson AB
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of the Eclipse Public License v1.0
+* which accompanies this distribution, and is available at
+* http://www.eclipse.org/legal/epl-v10.html
+*
+* Contributors:
+* Gabor Szalai
+* Attila Balasko
+* Balasko Jeno
+* Kulcsár Endre
+* Rita Tomasitsne Kovacs
+* Sandor Palugyai
+* Zsolt Szalai
+* Janos Kovesdi
+******************************************************************************/
+//
+//  File:           MSRP_Types.ttcn
+//  Description:    Types of protocol MSRP v12 and v19 
+//  Rev:            R8A
+//  Prodnr:         CNL 113 467
+//  Reference:      [1] draft-ietf-simple-message-sessions-12
+//                  [2] draft-ietf-simple-message-sessions-19
+//                  [3] RFC3986 : URI Generic Syntax
+
+module MSRP_Types
+{
+
+external function f_MSRP_Enc(in PDU_MSRP pl_msg, in boolean pl_IPv6_bracketing:=tsp_MSRP_EncDec_IPv6_bracketing) return charstring;
+external function f_MSRP_Dec(in charstring pl_stream, in boolean pl_IPv6_bracketing:=tsp_MSRP_EncDec_IPv6_bracketing) return PDU_MSRP;
+
+external function f_MSRP_Enc_binary(in PDU_MSRP pl_msg, in octetstring pl_content_data, in boolean pl_IPv6_bracketing:=tsp_MSRP_EncDec_IPv6_bracketing) return octetstring;
+external function f_MSRP_Dec_binary(in octetstring pl_stream,out octetstring pl_content_data, in boolean pl_IPv6_bracketing:=tsp_MSRP_EncDec_IPv6_bracketing) return PDU_MSRP;
+
+external function f_MsrpUri_Enc(in MsrpUri pl_msg, in boolean pl_IPv6_bracketing:=tsp_MSRP_EncDec_IPv6_bracketing) return charstring;
+external function f_MsrpUri_Dec(in charstring pl_stream, in boolean pl_IPv6_bracketing:=tsp_MSRP_EncDec_IPv6_bracketing) return MsrpUri;
+
+external function f_MSRPmsg_MessageLength(in octetstring pl_stream) return integer;
+
+modulepar boolean tsp_MSRP_EncDec_debug:=false;
+modulepar boolean tsp_MSRP_EncDec_IPv6_bracketing:=true;
+
+// Reference [1] and [2], Ch.9 Formal Syntax :
+
+//req-start  = pMSRP SP transact-id SP method CRLF
+//method = mSEND / mREPORT / other-method
+
+type record MsrpRequestStart
+{
+  charstring transactId,
+  charstring method
+} with {
+  variant "BEGIN('MSRP ',,case_insensitive)"; //MSRP
+  variant (transactId) "TEXT_CODING(,,'[\w]#(,)')";
+  variant "SEPARATOR(' ')";                   //SP
+  variant (method) "TEXT_CODING(,,'[A-Z]#(1,)')";
+  variant "END('\r\n')";
+  //variant(method) "TEXT_CODING(length=4)";
+};
+
+type record MsrpResponseStart
+{
+  charstring transactId,
+  integer statusCode,
+  charstring comment optional //old name in v10: phrase; e.g:"OK"
+} with {
+  variant "BEGIN('MSRP ',,case_insensitive)";
+  variant (transactId) "TEXT_CODING(,,'[\w]#(,)')";
+  variant "SEPARATOR(' ')";
+  variant "END('\r\n')";
+  variant (comment) "TEXT_CODING(,,'[^\n]#(1,)')";
+  variant(statusCode) "TEXT_CODING(length=3,,'[\d]#(,)')";
+};
+
+//see RFC3986: authority   = [ userinfo "@" ] host [ ":" port ]
+type record Authority
+{
+  charstring userinfo optional, //e.g Alice; "the authority component will typically not contain a userinfo"
+  charstring host     optional, //optional to support negative test
+  charstring portField optional
+} with {
+  variant(userinfo) "TEXT_CODING(,,'[^@\n;]#(,)')";  // \n includes \r !!
+  variant(userinfo) "END('@')";
+  variant(host) "TEXT_CODING(,,'([0-9a-zA-Z.-]#(1,))|(\[[0-9a-fA-F:.]#(1,)\])')";
+  variant(portField) "BEGIN(':')";
+  variant(portField) "TEXT_CODING(,,'([\d]#(1,))')";
+}
+
+/*
+   MSRP-URI = msrp-scheme "://" authority
+       ["/" session-id] ";" transport *( ";" URI-parameter)
+*/
+
+type record MsrpUri
+{
+  charstring msrpScheme, //msrp or msrps
+  //MSRPuserinfo userinfo optional,
+  Authority authority, 
+  charstring sessionId    optional,
+  charstring transport    optional, //tcp
+  charstring uriParameter optional
+} with {
+  variant (msrpScheme) "END('://')";
+  variant (sessionId) "BEGIN('/')";
+  variant (sessionId) "TEXT_CODING(,,'[^;]#(,)')";
+  variant (transport) "BEGIN(';')";
+  variant (uriParameter) "BEGIN(';')";
+  variant (uriParameter) "TEXT_CODING(,,'[\w]#(,)')";
+};
+
+type set of MsrpUri MsrpPath
+  with {
+  variant "SEPARATOR(' ')";
+};
+
+type record MsrpByteRange
+{
+  integer rangeStart,
+  charstring rangeEnd,
+  charstring total
+} with {
+  variant "BEGIN('Byte-Range: ','Byte-Range(([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,))))',case_insensitive)";
+  variant (rangeStart) "END('-')";
+  variant (rangeEnd) "TEXT_CODING(,,'[^/]#(,)')";
+  variant (rangeEnd) "END('/')";
+};
+
+type record MsrpStatus
+{
+  charstring namespace,
+  integer statusCode,
+  charstring textReason optional
+} with {
+  variant "BEGIN('Status:',,case_insensitive)";
+  //variant (namespace) "length=3"; <== not used to support negative test, use receiving template instead!
+  variant (namespace)  "BEGIN(' ')";
+  variant (namespace)  "TEXT_CODING(,,'[\d]#(,)')";
+  variant (statusCode) "BEGIN(' ')";
+  variant (statusCode) "TEXT_CODING(,,'[\d]#(,)')";
+  variant (textReason) "BEGIN(' ')";
+};
+
+type record MsrpHeaders
+{
+  MsrpPath toPath,
+  MsrpPath fromPath,
+  MsrpHeader header
+} with {
+  variant (toPath) "BEGIN('To-Path: ','To-Path(([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,))))', case_insensitive)";
+  variant (toPath) "END('\r\n')";
+  variant (fromPath) "BEGIN('From-Path: ','From-Path(([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,))))', case_insensitive)";
+  variant (fromPath) "END('\r\n')";
+};
+
+type enumerated MsrpSuccessReportENUM { successYes, successNo } 
+with {
+  variant "TEXT_CODING( successYes:'yes'; successNo:'no')"
+  variant "BEGIN('Success-Report: ','Success-Report(([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,))))', case_insensitive)";
+  variant "END('\r\n')";
+};
+
+type enumerated MsrpFailureReportENUM { failureYes, failureNo, failurePartial }
+with {
+  variant "TEXT_CODING( failureYes:'yes'; failureNo:'no'; failurePartial:'partial')"
+  variant "BEGIN('Failure-Report: ','Failure-Report(([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,))))', case_insensitive)";
+  variant "END('\r\n')";
+};
+ 
+type set of u_header_msrp HeaderSET_msrp;	
+
+type record u_header_msrp
+{
+  charstring hname,
+  charstring hval
+} with {
+  variant (hname) "TEXT_CODING(,,'([^c:]|c[^o:]|co[^n:]|con[^t:]|cont[^e:]|conte[^n:]|conten[^t:])#(,)',case_insensitive)"
+  variant (hname) "END(': ','(([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,))))')";
+  variant "END('\r\n')";
+};
+
+
+type set MsrpHeader
+{
+  charstring messageId optional,
+  MsrpSuccessReportENUM successReport optional,
+  MsrpFailureReportENUM failureReport optional,
+  MsrpByteRange byteRange optional,
+  MsrpStatus status optional,
+  HeaderSET_msrp extHeader optional
+} with {
+  variant (messageId) "BEGIN('Message-ID: ','Message-ID(([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,))))', case_insensitive)";
+  variant (messageId) "END('\r\n')";
+  variant (byteRange) "END('\r\n')";
+  variant (status) "END('\r\n')";
+  variant (extHeader) "TEXT_CODING(,repeatable=false)"
+};
+
+// Ref[1]/Ch. 9
+//content-stuff = *(Other-Mime-header CRLF)
+//                   Content-Type 2CRLF data CRLF197
+type record MsrpContentStuff
+{
+  MsrpOtherMimeHeader otherMimeHeader optional,
+  MsrpContentType contentType,
+  charstring data
+} with {
+  variant (contentType) "END('\r\n\r\n')";
+  variant (data) "END('\r\n','\r\n-------')"
+};
+
+type record MsrpContentType
+{
+  charstring typeX,
+  charstring subtype,
+  MsrpGenParamSETOF genParam optional
+} with {
+  variant "BEGIN('Content-Type: ','Content-Type((([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,)))))', case_insensitive)";
+  variant (subtype) "TEXT_CODING(,,'[^;\n]#(,)')"; // \n includes \r !!
+  variant (typeX) "END('/')";
+  //variant "END('\r\n\r\n')"
+};
+
+type set of MsrpHeaderPAR MsrpGenParamSETOF 
+  with {
+  variant "BEGIN(';','(([ \t]#(,))|(\r\n([ \t]#(1,))));(([ \t]#(,))|(\r\n([ \t]#(1,))))')";
+  variant "SEPARATOR(';','(([ \t]#(,))|(\r\n([ \t]#(1,))));(([ \t]#(,))|(\r\n([ \t]#(1,))))')";
+//  variant "END('\r\n')";
+};
+
+type record u_header
+{
+  charstring hname,
+  charstring hval
+} with {
+  variant "SEPARATOR(':','(([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,))))')";
+  variant "END('\r\n')";
+  variant (hname) "TEXT_CODING(,,'content-([^t]|t[^y]|ty[^p]|typ[^e])', case_insensitive)";
+};
+
+type set of u_header HeaderSET;
+
+type set MsrpOtherMimeHeader
+{
+  charstring contentId optional,
+  charstring contentDescription optional,
+  MsrpContentDisposition contentDisposition optional,
+  HeaderSET mimeExtensionField optional
+} with {
+  variant (contentId) "BEGIN('Content-Id: ','Content-Id(([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,))))',case_insensitive)";
+  variant (contentId) "END('\r\n')";
+  variant (contentDescription) "BEGIN('Content-Description: ','Content-Description(([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,))))',case_insensitive)";
+  variant (contentDescription) "END('\r\n')";
+  variant (contentDisposition) "END('\r\n')";
+  variant (mimeExtensionField) "TEXT_CODING(,repeatable=true)"
+};
+
+type record MsrpEndLine
+{
+  charstring transactId,
+  charstring continuationFlag
+} with{
+  variant "BEGIN('-------')";
+  variant (transactId) "TEXT_CODING(,,'[^+$#]#(,)')";
+  //variant (continuationFlag) "TEXT_CODING(,,'[+$#]#1')";
+  variant "END('\r\n')";
+};
+
+type record MsrpContentDisposition
+{
+  charstring dispositionType,
+  MsrpDispositionParm dispositionParm optional
+} with{
+  variant "BEGIN('Content-Disposition:','Content-Disposition(([ \t]#(,))|(\r\n([ \t]#(1,)))):(([ \t]#(,))|(\r\n([ \t]#(1,))))',case_insensitive)";
+  variant "SEPARATOR(';','(([ \t]#(,))|(\r\n([ \t]#(1,))));(([ \t]#(,))|(\r\n([ \t]#(1,))))')";  
+};
+
+type set of dispHeader MsrpDispositionParm	
+  with{
+  variant "SEPARATOR(';','(([ \t]#(,))|(\r\n([ \t]#(1,))));(([ \t]#(,))|(\r\n([ \t]#(1,))))')";  
+};
+
+type record dispHeader
+{
+  charstring hname,
+  charstring hval optional
+} with{
+  variant "SEPARATOR('=','(([ \t]#(,))|(\r\n([ \t]#(1,))))=(([ \t]#(,))|(\r\n([ \t]#(1,))))')";
+};
+
+type record MsrpHeaderPAR
+{
+  charstring hname,
+  charstring hval optional
+} with{
+  variant "SEPARATOR('=','(([ \t]#(,))|(\r\n([ \t]#(1,))))=(([ \t]#(,))|(\r\n([ \t]#(1,))))')";
+};
+
+// See  msrp-req-or-resp in ref [1],[2] 8.9
+type union PDU_MSRP
+{
+  MsrpRequest request,
+  MsrpResponse response,
+  charstring raw_message
+} with {variant "TEXT_CODING()"}
+
+//msrp-request
+type record MsrpRequest
+{
+  MsrpRequestStart requestStart,
+  MsrpHeaders headers,
+  MsrpContentStuff contentStuff optional,
+  MsrpEndLine endLine optional
+}
+
+type record MsrpResponse
+{
+  MsrpResponseStart responseStart,
+  MsrpHeaders headers,
+  MsrpEndLine endLine
+}
+
+}with{ encode "TEXT"}
+

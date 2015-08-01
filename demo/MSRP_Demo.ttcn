@@ -1,0 +1,417 @@
+/******************************************************************************
+* Copyright (c) 2005, 2015  Ericsson AB
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of the Eclipse Public License v1.0
+* which accompanies this distribution, and is available at
+* http://www.eclipse.org/legal/epl-v10.html
+*
+* Contributors:
+* Gabor Szalai
+* Attila Balasko
+* Balasko Jeno
+* Kulcsár Endre
+* Rita Tomasitsne Kovacs
+* Sandor Palugyai
+* Zsolt Szalai
+* Janos Kovesdi
+******************************************************************************/
+//  File:           MSRP_Demo.ttcn
+//  Description:    
+//  Rev:            R8A
+//  Prodnr:         CNL 113 467
+//  Reference:      [1] draft-ietf-simple-message-sessions-12
+//                  [2] draft-ietf-simple-message-sessions-19
+//                 
+module MSRP_Demo
+{
+
+import from MSRP_Types all;
+import from MSRP_Templates all;
+
+modulepar{
+  boolean tsp_MSRP_Demo_debug:=false;
+  Struct_MsrpRequestInfo tsp_requestInfo_Alice2Bob_Normal :=
+  {
+    transactId := "a786hjs2",
+    method     := "SEND",
+    toPath     := 
+    {
+      {
+        msrpScheme:="msrp", 
+        authority := { userinfo := "bob", host :="biloxi.example.com", portField:="12763" },
+        sessionId := "kjhd37s2s20w2a",
+        transport:= "tcp",
+        uriParameter := omit
+      }
+    },
+    fromPath :=
+    {
+      {
+        msrpScheme:="msrp", 
+        authority := { userinfo := omit, host :="alicepc.example.com", portField:="7654" },
+        sessionId := "jshA7weztas", 
+        transport:= "tcp",
+        uriParameter := omit
+      }
+    },
+    messageId := "87652491",
+    successReport := successYes,
+    failureReport := failureYes,
+    byteRangeStart := omit,
+    byteRangeEnd   := omit,
+    byteRangeTotal := omit,
+    status         := omit,
+    otherMimeHeader := omit,
+    contentType     := { "text", "data", omit},
+    data            := "Hey Bob, are You there ?"
+  };
+
+}
+
+type component MTC { };
+
+//*********************************************************************************
+// tc_CheckMsrpSendRequestTemplate_Normal
+//*********************************************************************************
+testcase tc_CheckMsrpSendRequestTemplate_Normal() runs on MTC
+{
+
+  log( "============= tc_CheckMsrpSendRequestTemplate_Normal ==============");
+  var Struct_MsrpRequestInfo vloc_msrpReqInfo := f_createDefaultMsrpRequestInfo();
+  var template MsrpRequest vtr_msrpReq := f_createMsrpRequestReceiveTemplate( vloc_msrpReqInfo, msrp_v19 );
+
+  //Solution with module parameters:
+  vloc_msrpReqInfo := tsp_requestInfo_Alice2Bob_Normal;
+
+
+  //other contentStaff component is handled by the template gen function:
+  var template MsrpRequest vloc_msrpReq := f_createMsrpRequestSendTemplate( vloc_msrpReqInfo, msrp_v19 );
+
+  var PDU_MSRP vloc_pduOriginal, vloc_pduDecoded;
+  vloc_pduOriginal.request := valueof(vloc_msrpReq);
+
+  log("===== Matching of the Sending and Receiving templates===");
+  log(match( valueof(vloc_msrpReq),vtr_msrpReq)); 
+
+  var charstring vloc_encodedMsg := f_MSRP_Enc( vloc_pduOriginal );
+  //log( "vloc_msrpReq:",  vloc_msrpReq);
+  log( "The encoded PDU containing request: ", vloc_encodedMsg );
+  //log("===== Test of Decoding===");
+  vloc_pduDecoded := f_MSRP_Dec( vloc_encodedMsg );
+  log( "The decoded PDU containing request:", vloc_pduDecoded );
+  log( match( vloc_pduDecoded.request, vtr_msrpReq));
+  if(  match( vloc_pduDecoded.request, vtr_msrpReq) )
+  {
+    setverdict( pass );
+  }
+  else
+  {
+    setverdict( fail );
+  }
+  log( "============= tc_CheckMsrpSendRequestTemplate_Normal finished=============");
+} 
+
+testcase tc_CheckMsrpSendRequestTemplate_tooShortMessageId() runs on MTC
+{
+
+  log( "============= tc_CheckMsrpSendRequestTemplate_tooShortMessageId ==============");
+  var Struct_MsrpRequestInfo vloc_msrpReqInfo := f_createDefaultMsrpRequestInfo();
+  var template MsrpRequest vtr_msrpReq := f_createMsrpRequestReceiveTemplate( vloc_msrpReqInfo, msrp_v19 );
+
+  vloc_msrpReqInfo := tsp_requestInfo_Alice2Bob_Normal;
+  //Modification messageId:
+  vloc_msrpReqInfo.messageId:= "87";
+
+  //other contentStaff component is handled by the template gen function:
+  var template MsrpRequest vloc_msrpReq := f_createMsrpRequestSendTemplate( vloc_msrpReqInfo, msrp_v19 );
+
+  var PDU_MSRP vloc_pduOriginal, vloc_pduDecoded;
+  vloc_pduOriginal.request := valueof(vloc_msrpReq);
+
+  log("===== Matching of the Sending and Receiving templates===");
+  log(match( valueof(vloc_msrpReq),vtr_msrpReq)); 
+
+  var charstring vloc_encodedMsg := f_MSRP_Enc( vloc_pduOriginal );
+  //log( "vloc_msrpReq:",  vloc_msrpReq);
+  log( "The encoded PDU containing request: ", vloc_encodedMsg );
+  log("===== Test of Decoding===");
+  vloc_pduDecoded := f_MSRP_Dec( vloc_encodedMsg );
+  //log( "The decoded PDU containing request:", vloc_pduDecoded );
+  log( match( vloc_pduDecoded.request, vtr_msrpReq));
+  if(  match( vloc_pduDecoded.request, vtr_msrpReq) )
+  {
+    setverdict( fail );
+  }
+  else
+  {
+    setverdict( pass);
+  }
+  log( "============= tc_CheckMsrpSendRequestTemplate_tooShortMessageId finished=============");
+} 
+
+//*********************************************************************************
+// tc_CheckMsrpReportRequestTemplate_Normal
+//*********************************************************************************
+//draft_v19 11.6:
+testcase tc_CheckMsrpReportRequestTemplate_Normal() runs on MTC
+{
+  log( "============= tc_CheckMsrpReportRequestTemplate_Normal ==============");
+  //Receiving template:
+  var Struct_MsrpRequestInfo vloc_msrpReqInfo := f_createDefaultMsrpRequestInfo();
+  var template MsrpRequest vtr_msrpReq := f_createMsrpRequestReceiveTemplate( vloc_msrpReqInfo, msrp_v19 );
+  vtr_msrpReq.requestStart.method := "REPORT"; //modifies SEND to REPORT
+
+  //Sending template (vloc_msrpReqInfo reusing):
+  vloc_msrpReqInfo.transactId := "d93kswow";
+  vloc_msrpReqInfo.toPath[0] := { 
+    msrpScheme:="msrp", 
+    authority := { userinfo := omit, host :="bob.example.com", portField:="8888" },
+    sessionId := "9di4eae923wzd",
+    transport:= "tcp",
+    uriParameter := omit };
+  vloc_msrpReqInfo.fromPath[0] := { 
+    msrpScheme:="msrp", 
+    authority := { userinfo := omit, host :="alice%-pc.example.com", portField:="7777" },
+    sessionId := "iau39soe2843z", 
+    transport:= "tcp",
+    uriParameter := omit};
+  vloc_msrpReqInfo.messageId:= "12339sdqwer";
+  vloc_msrpReqInfo.contentType:= { typeX := "text", subtype := "html", genParam := omit };
+  vloc_msrpReqInfo.status := { namespace := "000", statusCode := 200 , textReason := "OK"};
+  vloc_msrpReqInfo.data := "<html><body>\r\n<p>Here is that important link...\r\n<a href=""http://www.example.com/foobar"">foobar</a>\r\n</p>\r\n</body></html>"; 
+  
+  //other contentStaff component is handled by the template gen function:
+  var template MsrpRequest vloc_msrpReq := f_createMsrpReportRequestSendTemplate( vloc_msrpReqInfo, msrp_v19 );
+
+  var PDU_MSRP vloc_pduOriginal, vloc_pduDecoded;
+  vloc_pduOriginal.request := valueof(vloc_msrpReq);
+
+  log("===== Matching of the Sending and Receiving templates===");
+  log(match( valueof(vloc_msrpReq),vtr_msrpReq)); 
+
+  var charstring vloc_encodedMsg := f_MSRP_Enc( vloc_pduOriginal );
+  log( "vloc_msrpReq:",  vloc_msrpReq);
+  log( "The encoded PDU containing request: ", vloc_encodedMsg );
+  log("===== Test of Decoding===");
+  vloc_pduDecoded := f_MSRP_Dec( vloc_encodedMsg );
+  log( "The decoded PDU containing request:", vloc_pduDecoded );
+  log( match( vloc_pduDecoded.request, vtr_msrpReq));
+  if(  match( vloc_pduDecoded.request, vtr_msrpReq) )
+  {
+    setverdict( pass );
+  }
+  else
+  {
+    setverdict( fail );
+  }
+  log( "============= tc_CheckMsrpReportRequestTemplate_Normal finished=============");
+} 
+//*********************************************************************************
+// tc_CheckMsrpRequestSendTemplate_CpimChunkedData
+//*********************************************************************************
+testcase tc_CheckMsrpSendRequestTemplate_CpimChunkedData() runs on MTC
+{
+  log( "============= tc_CheckMsrpRequestSendTemplate_CpimChunkedData ==============");
+  var Struct_MsrpRequestInfo vloc_msrpReqInfo := f_createDefaultMsrpRequestInfo();
+  var template MsrpRequest vtr_msrpReq := f_createMsrpRequestReceiveTemplate( vloc_msrpReqInfo, msrp_v19 );
+
+  vloc_msrpReqInfo.transactId := "a786hjs2";
+  vloc_msrpReqInfo.toPath[0] := { 
+    msrpScheme:="msrp", 
+    authority := { userinfo := omit, host :="bob.example.com", portField:="12763" },
+    sessionId := "kjhd37s2s20w2a",
+    transport:= "tcp",
+    uriParameter := omit};
+  vloc_msrpReqInfo.fromPath[0] := { 
+    msrpScheme:="msrp", 
+    authority := { userinfo := omit, host :="alicepc.example.com", portField:="7654" },
+    sessionId := "jshA7weztas", 
+    transport:= "tcp",
+    uriParameter := omit};
+  vloc_msrpReqInfo.messageId:= "87652491";
+  vloc_msrpReqInfo.contentType := { "message", "cpim", omit };
+  vloc_msrpReqInfo.data := "To: Bob <sip:bob@example.com>\r\nFrom: Alice <sip:alice@example.com>\r\nDateTime: 2006-05-15T15:02:31-03:00\r\nContent-Type: text/plain\r\n\r\nABCD"; 
+
+  //other contentStaff component is handled by the template gen function:
+  var template MsrpRequest vloc_msrpReq := f_createMsrpRequestSendTemplate( vloc_msrpReqInfo, msrp_v19 );
+
+  var PDU_MSRP vloc_pduOriginal, vloc_pduDecoded;
+  vloc_pduOriginal.request := valueof(vloc_msrpReq);
+
+  log("===== Matching of the Sending and Receiving templates===");
+  log(match( valueof(vloc_msrpReq),vtr_msrpReq)); 
+
+  var charstring vloc_encodedMsg := f_MSRP_Enc( vloc_pduOriginal );
+  //log( "vloc_msrpReq:",  vloc_msrpReq);
+  log( "The encoded PDU containing request: ", vloc_encodedMsg );
+  log("===== Test of Decoding===");
+  vloc_pduDecoded := f_MSRP_Dec( vloc_encodedMsg );
+  log( "The decoded PDU containing request:", vloc_pduDecoded );
+  log( match( vloc_pduDecoded.request, vtr_msrpReq));
+  if(  match( vloc_pduDecoded.request, vtr_msrpReq) )
+  {
+    setverdict( pass );
+  }
+  else
+  {
+    setverdict( fail );
+  }
+  log( "============= tc_CheckMsrpRequestSendTemplate_CpimChunkedData finished=============");
+}
+
+//*********************************************************************************
+//   tc_CheckMsrpResponseTemplate_Normal
+//*********************************************************************************
+
+testcase tc_CheckMsrpResponseTemplate_Normal() runs on MTC
+{
+  log( "============= tc_CheckMsrpResponseSendTemplate started ==============");
+  var Struct_MsrpResponseInfo vloc_msrpRespInfo := f_createDefaultMsrpResponseInfo();
+
+  //default receive template:
+  var template MsrpResponse vtr_msrpResp := f_createMsrpResponseReceiveTemplate( vloc_msrpRespInfo, msrp_v19 );
+
+  //complete send template:
+  vloc_msrpRespInfo.transactId := "a786hjs2";
+  vloc_msrpRespInfo.statusCode :=200;
+  vloc_msrpRespInfo.comment :="OK";
+  vloc_msrpRespInfo.fromPath[0] := { 
+    msrpScheme:="msrp", 
+    authority := { userinfo := "bob", host :="biloxi.example.com", portField:="12763" },
+    sessionId := "kjhd37s2s20w2a",
+    transport:= "tcp",
+    uriParameter := omit};
+  vloc_msrpRespInfo.toPath[0] := { 
+    msrpScheme:="msrp", 
+    authority := { userinfo := omit, host :="alicepc.example.com", portField:="7654" },
+    sessionId := "jshA7weztas", 
+    transport:= "tcp",
+    uriParameter := omit};
+
+  var template MsrpResponse vloc_msrpResp := f_createMsrpResponseSendTemplate( vloc_msrpRespInfo, msrp_v19 );
+  var PDU_MSRP vloc_pduOriginal, vloc_pduDecoded;
+
+  vloc_pduOriginal.response := valueof(vloc_msrpResp);
+
+  var charstring vloc_encodedMsg := f_MSRP_Enc( vloc_pduOriginal );
+  //log( "vloc_msrpResp:",  vloc_msrpResp);
+  log( "The encoded PDU containing response: ", vloc_encodedMsg );
+  log("===== Test of Decoding Response ===");
+  vloc_pduDecoded := f_MSRP_Dec( vloc_encodedMsg );
+  log( "The decoded PDU containing response:", vloc_pduDecoded );
+  log( match( vloc_pduDecoded.response, vtr_msrpResp));
+
+  if(  match( vloc_pduDecoded.response, vtr_msrpResp) )
+  {
+    setverdict( pass );
+  }
+  else
+  {
+    setverdict( fail );
+  }
+  log( "============= tc_CheckMsrpResponseSendTemplate finished ==============");
+}
+
+//*********************************************************************************
+// tc_CheckMsrpSendRequestTemplate_SessionIdLengthTest
+//*********************************************************************************
+
+testcase tc_CheckMsrpSendRequestTemplate_SessionIdLengthTest() runs on MTC
+{
+
+  log( "============= tc_CheckMsrpSendRequestTemplate_SessionIdLengthTest started ==============");
+  var Struct_MsrpRequestInfo vloc_msrpReqInfo := f_createDefaultMsrpRequestInfo();
+  var template MsrpRequest vtr_msrpReq := f_createMsrpRequestReceiveTemplate( vloc_msrpReqInfo, msrp_v19 );
+
+  vloc_msrpReqInfo.transactId := "a786hjs2";
+  vloc_msrpReqInfo.toPath[0] := { 
+    msrpScheme:="msrp", 
+    authority := { userinfo := "bob", host :="biloxi.example.com", portField:="12763" },
+    sessionId := "kjhd37s2s20w2a",
+    transport:= "tcp",
+    uriParameter := omit};
+  vloc_msrpReqInfo.fromPath[0] := { 
+    msrpScheme:="msrp", 
+    authority := { userinfo := omit, host :="alicepc.example.com", portField:="7654" },
+    sessionId := "jshA7weztas", 
+    transport:= "tcp",
+    uriParameter := omit};
+  vloc_msrpReqInfo.messageId:= "87652491";
+  vloc_msrpReqInfo.data := "Hey Bob, are You there ?"; 
+
+  //other contentStaff component is handled by the template gen function:
+  var template MsrpRequest vloc_msrpReq := f_createMsrpRequestSendTemplate( vloc_msrpReqInfo, msrp_v19 );
+
+  var PDU_MSRP vloc_pduOriginal, vloc_pduDecoded;
+  vloc_pduOriginal.request := valueof(vloc_msrpReq);
+
+  //log(match( valueof(vloc_msrpReq),vtr_msrpReq)); 
+
+  var charstring vloc_encodedMsg; //:= f_MSRP_Enc( vloc_pduOriginal );
+  var charstring vloc_sessionId :="";
+
+  //Too short session Ids:
+  //Check sessionId from "1" to "111111111"  
+  for( var integer i :=1; i<10; i:=i+1)
+  {
+
+    vloc_sessionId := vloc_sessionId  & "1";
+    vloc_msrpReq.headers.fromPath[0].sessionId := vloc_sessionId;
+    //log(">>DEBUG i=", i, "vloc_msrpReq=", vloc_msrpReq);
+    vloc_pduOriginal.request := valueof(vloc_msrpReq);
+    vloc_encodedMsg := f_MSRP_Enc( vloc_pduOriginal );
+    vloc_pduDecoded := f_MSRP_Dec( vloc_encodedMsg );
+    log(">>>DEBUG:for i= ", i, " encoded message:", vloc_encodedMsg )
+    //log(match( vloc_pduDecoded.request, vtr_msrpReq));
+    if( match( vloc_pduDecoded.request, vtr_msrpReq) )
+    {
+      setverdict( fail); //not match expected
+      log(">>>DEBUG for i=", i, " NOK\n" );
+      log(match( vloc_pduDecoded.request, vtr_msrpReq));
+
+    }
+    else
+    {
+      setverdict(pass);
+      log(">>>DEBUG for i=", i, " OK\n" );
+    }
+  }
+
+  //Long session Ids ( len=(11..20) )
+  for( var integer i :=10; i<20; i:=i+1)
+  {
+
+    vloc_sessionId := vloc_sessionId  & "1";
+
+    vloc_msrpReq.headers.fromPath[0].sessionId := vloc_sessionId;
+    vloc_pduOriginal.request := valueof(vloc_msrpReq);
+    vloc_encodedMsg := f_MSRP_Enc( vloc_pduOriginal );
+    vloc_pduDecoded := f_MSRP_Dec( vloc_encodedMsg );
+    //log(match( vloc_pduDecoded.request, vtr_msrpReq));
+    if( match( vloc_pduDecoded.request, vtr_msrpReq) )
+    {
+      setverdict( pass); //not match expected
+      log(">>>DEBUG for i=", i, " OK\n" ); //vloc_msrpReq=", vloc_msrpReq);
+    }
+    else
+    {
+      setverdict(fail);
+      log(">>>DEBUG for i=", i, " NOK\n" );
+      log(match( vloc_pduDecoded.request, vtr_msrpReq));
+      
+    }
+  }
+  log( "============= tc_CheckMsrpSendRequestTemplate_SessionIdLengthTest finished=============");
+} 
+control 
+{
+  //execute( tc_CheckMsrpRequestReceivingTemplate() );
+  execute( tc_CheckMsrpSendRequestTemplate_Normal() );
+  execute( tc_CheckMsrpResponseTemplate_Normal() );
+  execute( tc_CheckMsrpSendRequestTemplate_CpimChunkedData());
+  execute( tc_CheckMsrpSendRequestTemplate_SessionIdLengthTest() );
+  execute( tc_CheckMsrpReportRequestTemplate_Normal());
+}
+
+
+}//module

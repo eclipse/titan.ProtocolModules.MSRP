@@ -1,0 +1,984 @@
+/******************************************************************************
+* Copyright (c) 2005, 2015  Ericsson AB
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of the Eclipse Public License v1.0
+* which accompanies this distribution, and is available at
+* http://www.eclipse.org/legal/epl-v10.html
+*
+* Contributors:
+* Gabor Szalai
+* Attila Balasko
+* Balasko Jeno
+* Kulcsár Endre
+* Rita Tomasitsne Kovacs
+* Sandor Palugyai
+* Zsolt Szalai
+* Janos Kovesdi
+******************************************************************************/
+//
+//  File:           MSRP_Templates.ttcn
+//  Description:    
+//  Rev:            R8A
+//  Prodnr:         CNL 113 467
+//  Reference:      [1] draft-ietf-simple-message-sessions-12
+//                  [2] draft-ietf-simple-message-sessions-19
+//                  [3] RFC3986 : URI Generic Syntax
+
+module MSRP_Templates
+{
+
+import from MSRP_Types all;
+
+modulepar{
+  boolean tsp_MSRP_Templates_debug:=false;
+}
+
+//Ref[2] page 35:
+//token = 1*(%x21 / %x23-27 / %x2A-2B / %x2D-2E
+//              / %x30-39 / %x41-5A / %x5E-7E)
+template charstring tr_token := pattern "[!\#-'*\+.0-9A-Z^-~-]#(0,)";
+//template charstring tr_uriParameter := pattern "[!\#$%&'*+\.\w^_\{\|\}~]#(0,)[=]#(0,)[!\#$%&'*+.\w^_\{\|\}\~]#(0,)";
+template charstring tr_uriParameter := *;
+//ident = alphanum  3*31ident-char
+template charstring t_messageId  := pattern "[\w][\w.\+%=-]#(3,31)"; //common value has 7 chars
+
+//== sessionId: ==
+
+//draft_v12: session-id = 1*( unreserved / "+" / "=" / )
+//unreserved  = ALPHA / DIGIT / "-" / "." / "_" / "~"
+template charstring t_sessionId_v12 := pattern "[\w\+/=._~-]#(1,)";  
+template charstring t_sessionId_v19 := pattern "[\w\+/=._~-]#(10,)"; //draft_v12 + draft_v19/Ch 14.1 "at least 80 bits"
+
+
+//== transact-id :==
+
+//draft_v12: 
+//transact-id = ident
+//ident = alphanum  3*31ident-char
+//ident-char = alphanum / "." / "-" / "+" / "%" / "="
+template charstring t_transactId_v12 := pattern "[\w]#1[\w.\+%=-]#(3,31)"; // \- mistake???
+
+
+template charstring t_transactId_v19 := pattern "[\w]#1[\w.\+%=-]#(7,31)";//like prev. + draft_v19/Ch7.1 "at least 64 bits"
+
+type enumerated MsrpVersion { msrp_v12, msrp_v19 };
+
+//-----------------------------------------------------
+// Static templates
+//-----------------------------------------------------
+
+// To receive and get any MSRP request or response with minimal check
+
+template PDU_MSRP tr_MSRP_PDU := ?;
+
+template PDU_MSRP tr_MSRP_PDU_request := { request := ? };
+
+template PDU_MSRP tr_MSRP_PDU_response := { response := ? };
+
+template PDU_MSRP tr_MSRP_PDU_request_SEND := {
+  request := {
+    requestStart:= { transactId := ?, method := "SEND" },
+    headers := ?,
+    contentStuff := *,
+    endLine := ?
+  }
+}
+
+template PDU_MSRP tr_MSRP_PDU_request_REPORT := {
+  request := {
+    requestStart:= { transactId := ?, method := "REPORT" },
+    headers := ?,
+    contentStuff := *,
+    endLine := ?
+  }
+}
+
+template PDU_MSRP tr_MSRP_PDU_request_PAR( 
+    template charstring p_transactId, 
+    template charstring  p_method ) := 
+{
+  request := {
+    requestStart:= { transactId := ?, method := p_method },
+    headers := ?,
+    contentStuff := *,
+    endLine := ?
+  }
+}
+
+template PDU_MSRP tr_MSRP_PDU_response_PAR( template charstring p_transactionId, template integer p_statusCode) := {
+  response := {
+    responseStart:= { 
+      transactId := p_transactionId, 
+      statusCode := p_statusCode , 
+      comment := * 
+    },
+    headers := ?,
+    endLine := ?
+  }
+}
+
+//-----------------------------------------------------
+// Dynamic templates ( Template variables) 
+//-----------------------------------------------------
+
+// for detailed check mainly after storing the received message
+// and 
+// for creating send message
+
+//===================================================================
+//   MSRP Request
+//===================================================================
+
+//input data to create MSRP request
+type record Struct_MsrpRequestInfo
+{
+  charstring transactId     optional, //omit => ? or ""
+  charstring method         optional,     //SEND, REPORT or anything. omit-> "SEND"
+  MsrpPath   toPath         optional,
+  MsrpPath   fromPath       optional,
+  charstring messageId      optional,
+  MsrpSuccessReportENUM successReport optional,
+  MsrpFailureReportENUM failureReport optional,
+  //byteRange:for sending template it is calculated from "data", fill in only to negative test
+  integer    byteRangeStart optional, //default:1
+  charstring byteRangeEnd   optional,
+  charstring byteRangeTotal optional,
+  MsrpStatus status         optional,
+  //contentStuff:
+  MsrpOtherMimeHeader otherMimeHeader optional,
+  MsrpContentType     contentType     optional,
+  charstring data optional
+}
+
+/*********************************************************
+* Function: f_createDefaultMsrpRequestInfo
+*
+* Purpose: To produce a variable of type Struct_MsrpRequestInfo and fill in with default values
+*
+* References: -
+
+* Parameters: -
+*
+* Return Value:
+*  Struct_MsrpRequestInfo
+*
+* Detailed Comments:
+*   Struct_MsrpRequestInfo stands for holding input information for template generating functions
+*   All default values are "omit". Omit's message to the template generating functions is "use the default value".
+*********************************************************/
+function f_createDefaultMsrpRequestInfo()
+return Struct_MsrpRequestInfo
+{
+  var Struct_MsrpRequestInfo vloc_info;
+  vloc_info.transactId := omit;
+  vloc_info.method     := omit; //default: SEND in request
+  //headers:
+  vloc_info.toPath     := omit;
+  vloc_info.fromPath   := omit;
+  //header:
+  vloc_info.messageId  := omit;
+  vloc_info.successReport := omit;
+  vloc_info.failureReport := omit;
+  //vloc_info.byteRange :
+  vloc_info.byteRangeStart := omit;
+  vloc_info.byteRangeEnd := omit;  //calculated from data
+  vloc_info.byteRangeTotal := omit;
+  vloc_info.status := omit;
+  //contentSuff:
+  vloc_info.otherMimeHeader := omit;
+  vloc_info.contentType := omit;
+  vloc_info.data := omit;
+  log(vloc_info);
+  return vloc_info;
+}
+
+/*********************************************************
+* Function: f_createMsrpRequestSendTemplate
+*
+* Purpose: To create a sending template variable of type  MSRP Request.
+*
+* References: -
+
+* Parameters: -
+*
+* Return Value:
+*  Struct_MsrpRequestInfo
+*
+* Detailed Comments:
+*  It creates a template variable to be sent. If the input structure has not filled in with other values than "omit",
+*  the respective field will be filled in with its default value.
+*  Field                 Default value: 
+*  transactId            "" (empty string)
+*  method                "SEND"           Cannot be modified by this function. Mofify it after the function call.
+*  toPath                {
+*                         {
+*                           msrpScheme:="msrp", 
+*                           authority := { userinfo := omit, host :="", portField:=omit },
+*                           sessionId := omit,
+*                           transport:= "tcp"
+*                           uriParameter := omit;
+*                         }
+*                       },
+*  fromPath                 as toPath
+*  header.messageId         ""
+*  header.successReport     omit 
+*  header.failureReport     omit 
+*  header.byteRange         rangeStart :=1, rangeEnd and total is filled in (calculated) according to the data field, 
+*                          if not required otherwise
+*  headers.header.status    omit 
+*  headers.header.extHeader omit 
+*  contentStuff             omit,  if none of its field is defined, otherwise its field has dafult values:
+*  contentStuff.otherMimeHeader      omit
+*  contentStuff.contentType.typeX   "text" 
+*  contentStuff.contentType.subtype "plain"
+*  contentStuff.contentType.genParam omit;
+*  contentStuff.data                 ""
+*  endLine                           { transactId := "", continuationFlag := "$"}
+*********************************************************/
+function f_createMsrpRequestSendTemplate( in Struct_MsrpRequestInfo p_request, in  MsrpVersion p_msrpVersion)
+return template MsrpRequest
+{
+  var template MsrpRequest vloc_msrpReq;
+
+  //=== default settings ======
+  vloc_msrpReq.requestStart := { transactId := "", method := "SEND" };
+
+  //vloc_msrpReq.headers.toPath :
+  vloc_msrpReq.headers.toPath[0].msrpScheme:="msrp";
+  vloc_msrpReq.headers.toPath[0].authority.userinfo := omit;
+  vloc_msrpReq.headers.toPath[0].authority.host := "";
+  vloc_msrpReq.headers.toPath[0].authority.portField := omit;
+  vloc_msrpReq.headers.toPath[0].sessionId := omit;
+  vloc_msrpReq.headers.toPath[0].transport := "tcp";
+  vloc_msrpReq.headers.toPath[0].uriParameter := omit;
+
+  //vloc_msrpReq.headers.fromPath :
+  vloc_msrpReq.headers.fromPath[0].msrpScheme:="msrp";
+  vloc_msrpReq.headers.fromPath[0].authority.userinfo := omit;
+  vloc_msrpReq.headers.fromPath[0].authority.host := omit;
+  vloc_msrpReq.headers.fromPath[0].authority.portField := omit;
+  vloc_msrpReq.headers.fromPath[0].sessionId := omit;
+  vloc_msrpReq.headers.fromPath[0].transport := "tcp";
+  vloc_msrpReq.headers.fromPath[0].uriParameter := omit;
+  vloc_msrpReq.headers.header.messageId := "";
+  vloc_msrpReq.headers.header.successReport := omit;
+  vloc_msrpReq.headers.header.failureReport := omit;
+  //vloc_msrpReq.headers.header.byteRange := omit;
+  vloc_msrpReq.headers.header.byteRange.rangeStart := 1;
+  vloc_msrpReq.headers.header.byteRange.rangeEnd := "1";
+  vloc_msrpReq.headers.header.byteRange.total := "0";
+  vloc_msrpReq.headers.header.status := omit;
+  vloc_msrpReq.headers.header.extHeader :=omit;
+
+  vloc_msrpReq.contentStuff := omit; //if not defined any of its field
+  vloc_msrpReq.endLine := { transactId := "", continuationFlag := "$"}
+
+  //==== modification of default values: ===
+
+  //===RequestStart:===
+  if( ispresent( p_request.transactId ) )
+  {
+    vloc_msrpReq.requestStart.transactId := p_request.transactId;
+    vloc_msrpReq.endLine.transactId := p_request.transactId;
+  }
+  else
+  {
+    log("WARNING:[f_createMsrpRequestSendTemplate]: transactionId not defined, string 'SEND' used");
+  }
+
+  if( ispresent( p_request.method ))
+  {
+    vloc_msrpReq.requestStart.method := p_request.method;
+  }
+  else
+  {
+    log("WARNING:[f_createMsrpRequestSendTemplate]: method not defined, empty string used");
+  }
+  //===Headers:===
+  if( ispresent( p_request.toPath ) )
+  {
+    vloc_msrpReq.headers.toPath := p_request.toPath;
+  }
+  else
+  {
+    //log("WARNING:[f_createMsrpRequestSendTemplate]: toPath not defined, default values used");
+  }
+
+  if( ispresent( p_request.fromPath ) )
+  {
+    vloc_msrpReq.headers.fromPath := p_request.fromPath;
+  }
+  else
+  {
+    //log("WARNING:[f_createMsrpRequestSendTemplate]: fromPath not defined, default values used");
+  }
+
+  if( ispresent( p_request.messageId))
+  {
+    vloc_msrpReq.headers.header.messageId := p_request.messageId;
+  }
+
+  if( ispresent( p_request.successReport))
+  {
+    vloc_msrpReq.headers.header.successReport := p_request.successReport;
+  }
+  if( ispresent( p_request.failureReport))
+  {
+    vloc_msrpReq.headers.header.failureReport := p_request.failureReport;
+  }
+
+
+
+  //byteRange:
+  if(ispresent( p_request.byteRangeStart))
+  {
+    vloc_msrpReq.headers.header.byteRange.rangeStart := p_request.byteRangeStart;
+  }
+  //other byteRange fields come later
+  if(ispresent(p_request.status))
+  {
+    vloc_msrpReq.headers.header.status := p_request.status;
+  }
+
+
+  //if any field of contentStuff is present, the record shall be initialized with default values:
+  if( ispresent(p_request.otherMimeHeader) or ispresent( p_request.contentType) or ispresent(p_request.data))
+  {
+    vloc_msrpReq.contentStuff.otherMimeHeader := omit;
+    vloc_msrpReq.contentStuff.contentType.typeX :="text";
+    vloc_msrpReq.contentStuff.contentType.subtype :="plain";
+    vloc_msrpReq.contentStuff.contentType.genParam := omit;
+    vloc_msrpReq.contentStuff.data := "";
+  }
+
+  if(ispresent( p_request.otherMimeHeader))
+  {
+    vloc_msrpReq.contentStuff.otherMimeHeader := p_request.otherMimeHeader;
+  }
+
+  if( ispresent(p_request.contentType))
+  {
+    vloc_msrpReq.contentStuff.contentType := p_request.contentType;
+  }
+
+  if(ispresent(p_request.data))
+  {
+
+    var integer vloc_len := lengthof(p_request.data);
+    vloc_msrpReq.contentStuff.data := p_request.data;
+
+    vloc_msrpReq.headers.header.byteRange.rangeEnd :=
+      int2str( valueof(vloc_msrpReq.headers.header.byteRange.rangeStart) + vloc_len ); //???
+
+    vloc_msrpReq.headers.header.byteRange.total := vloc_msrpReq.headers.header.byteRange.rangeEnd; 
+
+  }
+
+  //byteRange  - In case of negative test the range data can be modified after calling this function!
+
+  // vloc_msrpReq.headers.header.byteRange.rangeStart : see some lines above!
+
+  if(ispresent( p_request.byteRangeEnd))
+  {
+    vloc_msrpReq.headers.header.byteRange.rangeEnd := p_request.byteRangeEnd;
+  }
+  if(ispresent( p_request.byteRangeTotal))
+  {
+    vloc_msrpReq.headers.header.byteRange.total := p_request.byteRangeTotal;
+  }
+  //log( ">>>DEBUG:[f_createMsrpRequestSendTemplate] - vloc_msrpReq:",vloc_msrpReq);
+  return vloc_msrpReq;
+}//f_createMsrpRequestSendTemplate
+
+
+/*********************************************************
+* Function: f_createMsrpRequestReceiveTemplate
+*
+* Purpose: To create a receiveing template variable of type  MSRP Request.
+*
+* References: -
+
+* Parameters: -
+*
+* Return Value:
+*  Struct_MsrpRequestInfo
+*
+* Detailed Comments:
+*  It creates a template variable for receiveing. If the input structure has not filled in with other values than "omit",
+*  the respective field will be filled in with its default value.
+*  Field                 Default value: 
+*  transactId            "" (empty string)
+*  method                ?           Cannot be modified by this function. Mofify it after the function call.
+*  toPath                {
+*                         {
+*                           msrpScheme:="msrp", 
+*                           authority := { userinfo := *, host :=?, portField:=* },
+*                           sessionId := ?, //+ filtering see t_sessionId_v12 and t_sessionId_v19
+*                           transport:= "tcp"
+*                           uriParameter := *; //with filter
+*                         }
+*                       },
+*  fromPath                 as toPath
+*  header.messageId         * //+ filtering, see t_messageId
+*  header.successReport     *
+*  header.failureReport     *
+*  header.byteRange         { rangeStart :=?, rangeEnd:=?, total:=? }
+*  headers.header.status    * 
+*  headers.header.extHeader *
+*  contentStuff             omit,  if none of its field is defined, otherwise its field has dafult values:
+*  contentStuff.otherMimeHeader      omit
+*  contentStuff.contentType.typeX    ?
+*  contentStuff.contentType.subtype  ?
+*  contentStuff.contentType.genParam omit
+*  contentStuff.data                 ?
+*  endLine                           { transactId := ?, continuationFlag := ?}
+*********************************************************/
+function f_createMsrpRequestReceiveTemplate( in Struct_MsrpRequestInfo p_request, in  MsrpVersion p_msrpVersion)
+return template MsrpRequest
+{
+  var template MsrpRequest vloc_msrpReq := *;
+
+  //default:
+  vloc_msrpReq.requestStart := { transactId := ?, method := ? };
+
+  //vloc_msrpReq.headers := { toPath := ?, fromPath := ?, header := ? };
+
+  //vloc_msrpReq.headers.toPath:
+  vloc_msrpReq.headers.toPath[0].msrpScheme:="msrp";
+  vloc_msrpReq.headers.toPath[0].authority.userinfo := *;
+  vloc_msrpReq.headers.toPath[0].authority.host := ?;
+  vloc_msrpReq.headers.toPath[0].authority.portField := *;
+  if( p_msrpVersion == msrp_v12 ) { vloc_msrpReq.headers.toPath[0].sessionId := t_sessionId_v12;}
+  else { /*v19*/ vloc_msrpReq.headers.toPath[0].sessionId := t_sessionId_v19 ;}
+
+  vloc_msrpReq.headers.toPath[0].transport := "tcp";
+  vloc_msrpReq.headers.toPath[0].uriParameter := tr_uriParameter;
+
+  //vloc_msrpReq.headers.fromPath :
+  vloc_msrpReq.headers.fromPath[0].msrpScheme:="msrp";
+  vloc_msrpReq.headers.fromPath[0].authority.userinfo := *;
+  vloc_msrpReq.headers.fromPath[0].authority.host := ?;
+  vloc_msrpReq.headers.fromPath[0].authority.portField := *;
+  //vloc_msrpReq.headers.fromPath[0].sessionId := t_sessionId;
+
+  if( p_msrpVersion == msrp_v12 ) { vloc_msrpReq.headers.fromPath[0].sessionId := t_sessionId_v12;}
+  else { /*v19*/ vloc_msrpReq.headers.fromPath[0].sessionId := t_sessionId_v19 ;}
+
+  vloc_msrpReq.headers.fromPath[0].transport := "tcp";
+  vloc_msrpReq.headers.fromPath[0].uriParameter := tr_uriParameter;
+
+  //vloc_msrpReq.headers.header
+  vloc_msrpReq.headers.header.messageId := t_messageId;
+  vloc_msrpReq.headers.header.successReport := *;
+  vloc_msrpReq.headers.header.failureReport := *;
+  //vloc_msrpReq.headers.header.byteRange := ?;
+  vloc_msrpReq.headers.header.byteRange.rangeStart := ?;
+  vloc_msrpReq.headers.header.byteRange.rangeEnd := ?;
+  vloc_msrpReq.headers.header.byteRange.total := ?;
+  vloc_msrpReq.headers.header.status := *;
+  vloc_msrpReq.headers.header.extHeader :=omit;
+
+  vloc_msrpReq.contentStuff := *;
+  if( ispresent(p_request.otherMimeHeader) or ispresent( p_request.contentType) or ispresent(p_request.data))
+  {
+    //defaults:
+    vloc_msrpReq.contentStuff.otherMimeHeader := *;
+    //vloc_msrpReq.contentStuff.contentType := ?;
+    vloc_msrpReq.contentStuff.contentType.typeX :=?;
+    vloc_msrpReq.contentStuff.contentType.subtype := ?
+    vloc_msrpReq.contentStuff.contentType.genParam := omit;
+    vloc_msrpReq.contentStuff.data := ?;
+  }
+
+  vloc_msrpReq.endLine := { transactId := ?, continuationFlag := ?}
+
+  //vloc_msrpReq.endLine.continuationFlag := pattern "[+$#]"; <== WRONG
+
+  //===RequestStart:===
+  if( ispresent( p_request.transactId ) )
+  {
+    vloc_msrpReq.requestStart.transactId := p_request.transactId;
+    vloc_msrpReq.endLine.transactId := p_request.transactId;
+  }
+
+  if( ispresent( p_request.method ))
+  {
+    vloc_msrpReq.requestStart.method := p_request.method;
+  }
+
+  //===Headers:===
+  if( ispresent( p_request.toPath ) )
+  {
+    vloc_msrpReq.headers.toPath := p_request.toPath;
+  }
+
+  if( ispresent( p_request.fromPath ) )
+  {
+    vloc_msrpReq.headers.fromPath := p_request.fromPath;
+  }
+
+  if( ispresent( p_request.messageId))
+  {
+    vloc_msrpReq.headers.header.messageId := p_request.messageId;
+  }
+
+  if(ispresent(p_request.status))
+  {
+    vloc_msrpReq.headers.header.status := p_request.status;
+  }
+
+  if(ispresent( p_request.otherMimeHeader))
+  {
+    vloc_msrpReq.contentStuff.otherMimeHeader := p_request.otherMimeHeader;
+  }
+
+  if(ispresent(p_request.data))
+  {
+    vloc_msrpReq.contentStuff.data := p_request.data;
+  }
+
+  //log( ">>>DEBUG:[f_createMsrpRequestReceiveTemplate] - vloc_msrpReq:",vloc_msrpReq);
+  return vloc_msrpReq;
+}//f_createMsrpRequestReceiveTemplate
+
+
+//===================================================================
+//   MSRP Response
+//===================================================================
+
+//input data to create MSRP response
+type record Struct_MsrpResponseInfo
+{
+  charstring transactId optional, //omit => ? or ""
+  integer    statusCode optional, //default: 200 for sending, ? for receiving
+  charstring comment optional, //default: "OK"
+  MsrpPath   toPath optional,
+  MsrpPath   fromPath optional,
+  //MsrpHeader header:
+  charstring messageId optional,
+  MsrpSuccessReportENUM successReport optional,
+  MsrpFailureReportENUM failureReport optional,
+  MsrpStatus status optional,
+  HeaderSET_msrp extHeader optional
+}
+/*********************************************************
+* Function: f_createDefaultMsrpResponseInfo
+*
+* Purpose: To produce a variable of type Struct_MsrpResponseInfo and fill in with default values
+*
+* References: -
+
+* Parameters: -
+*
+* Return Value:
+*  Struct_MsrpResponseInfo
+*
+* Detailed Comments:
+*   Struct_MsrpRequestInfo stands for holding input information for template generating functions
+*   All default values are "omit". Omit's message to the template generating functions is "use the default value".
+*********************************************************/
+function f_createDefaultMsrpResponseInfo()
+return Struct_MsrpResponseInfo
+{
+  var Struct_MsrpResponseInfo vloc_info;
+  vloc_info.transactId := omit;
+  vloc_info.statusCode := omit; //default:200
+  vloc_info.comment := omit;
+
+  vloc_info.toPath     := omit;
+  vloc_info.fromPath   := omit;
+  //vloc_info.header     := omit;
+  vloc_info.messageId := omit;
+  //vloc_info.byteRange : -
+  vloc_info.successReport := omit;
+  vloc_info.failureReport := omit;
+  vloc_info.status := omit;
+  vloc_info.extHeader := omit;
+  return vloc_info;
+}//f_createDefaultMsrpResponseInfo
+
+
+/*********************************************************
+* Function: f_createMsrpResponseSendTemplate
+*
+* Purpose: To create a sending template variable type of MSRP Response.
+*
+* References: -
+
+* Parameters: 
+*  p_response         - input parameters how to fill the values in
+*  p_msrpVersion      - the protocol version of the output 
+*
+* Return Value:
+*  Struct_MsrpResponseInfo
+*
+* Detailed Comments:
+*  It creates a template variable for sending. If the input structure has not filled in with other values than "omit",
+*  the respective field will be filled in with its default value.
+*  Field             Default value: 
+*  responseStart     { transactId:="",statusCode:=200, comment:=omit } 
+*  
+*  toPath            {
+*                      {
+*                        msrpScheme:="msrp", 
+*                        authority := { userinfo := omit, host :=omit, portField:=omit },
+*                        sessionId := omit
+*                        transport:= "tcp"
+*                        uriParameter := omit;
+*                      }
+*                    },
+   toPath[0].sessionId      filtered according to the specs and p_msrpVersion
+*  fromPath                 as toPath
+*  header.messageId         omit
+*  header.successReport     omit
+*  header.failureReport     omit
+*  header.byteRange         omit
+*  headers.header.status    omit
+*  headers.header.extHeader omit
+*  endLine                  { transactId := "", continuationFlag := "$"}
+************************************************************/
+function f_createMsrpResponseSendTemplate(in Struct_MsrpResponseInfo p_response, in  MsrpVersion p_msrpVersion )
+return template MsrpResponse
+{
+  var template MsrpResponse vloc_msrpResp;
+
+  //=== default settings ======
+  vloc_msrpResp.responseStart := { transactId:="",statusCode:=200, comment:= omit }
+
+  //vloc_msrpResp.headers.toPath :
+  vloc_msrpResp.headers.toPath[0].msrpScheme:="msrp";
+  vloc_msrpResp.headers.toPath[0].authority.userinfo := omit;
+  vloc_msrpResp.headers.toPath[0].authority.host := omit;
+  vloc_msrpResp.headers.toPath[0].authority.portField := omit;
+  vloc_msrpResp.headers.toPath[0].sessionId := omit;
+  vloc_msrpResp.headers.toPath[0].transport := "tcp";
+  vloc_msrpResp.headers.toPath[0].uriParameter := omit;
+
+  //vloc_msrpResp.headers.fromPath :
+  vloc_msrpResp.headers.fromPath[0].msrpScheme:="msrp";
+  vloc_msrpResp.headers.fromPath[0].authority.userinfo := omit;
+  vloc_msrpResp.headers.fromPath[0].authority.host := "";
+  vloc_msrpResp.headers.fromPath[0].authority.portField := omit;
+  vloc_msrpResp.headers.fromPath[0].sessionId := omit;
+  vloc_msrpResp.headers.fromPath[0].transport := "tcp";
+  vloc_msrpResp.headers.fromPath[0].uriParameter := omit;
+
+  vloc_msrpResp.headers.header.messageId := omit;
+  vloc_msrpResp.headers.header.successReport := omit;
+  vloc_msrpResp.headers.header.failureReport := omit;
+  vloc_msrpResp.headers.header.byteRange := omit;
+
+  vloc_msrpResp.headers.header.status :=omit;
+  vloc_msrpResp.headers.header.extHeader := omit;
+
+  vloc_msrpResp.endLine := { transactId := "", continuationFlag := "$"}
+
+  //===Response Start:====
+  if( ispresent( p_response.transactId ) )
+  {
+    vloc_msrpResp.responseStart.transactId := p_response.transactId;
+    vloc_msrpResp.endLine.transactId := p_response.transactId;
+  }
+  else
+  {
+    log("WARNING:[f_createMsrpResponseSendTemplate]: transactionId not defined, empty string used");
+  }
+
+  if( ispresent( p_response.statusCode ) )
+  {
+    vloc_msrpResp.responseStart.statusCode := p_response.statusCode;
+  }
+  if( ispresent( p_response.comment ) )
+  {
+    vloc_msrpResp.responseStart.comment := p_response.comment;
+  }
+
+  //=== Response Header:====  
+  if( ispresent( p_response.toPath ) )
+  {
+    vloc_msrpResp.headers.toPath := p_response.toPath;
+  }
+  else
+  {
+    log("WARNING:[f_createMsrpResponseSendTemplate]: toPath not defined, empty string used");
+  }
+
+  if( ispresent( p_response.fromPath ) )
+  {
+    vloc_msrpResp.headers.fromPath := p_response.fromPath;
+  }
+  else
+  {
+    log("WARNING:[f_createMsrpResponseSendTemplate]: fromPath not defined, empty string used");
+  }
+
+  if( ispresent( p_response.messageId))
+  {
+    vloc_msrpResp.headers.header.messageId := p_response.messageId;
+  }
+  if( ispresent( p_response.messageId))
+  {
+    vloc_msrpResp.headers.header.messageId := p_response.messageId;
+  }
+  //byteRange omitted.
+  if(ispresent(p_response.status))
+  {
+    vloc_msrpResp.headers.header.status := p_response.status;
+  }
+  //success:
+  if( ispresent( p_response.successReport))
+  {
+    vloc_msrpResp.headers.header.successReport := p_response.successReport;
+  }
+  //failure:
+  if( ispresent( p_response.failureReport))
+  {
+    vloc_msrpResp.headers.header.failureReport := p_response.failureReport;
+  }
+
+  if(ispresent( p_response.status))
+  {
+    vloc_msrpResp.headers.header.status := p_response.status;
+  }
+
+  if( ispresent( p_response.extHeader))
+  {
+    vloc_msrpResp.headers.header.extHeader := p_response.extHeader;
+  }
+  //==== End Line ====
+  //transactId       - already handled
+  //continuationFlag - already handled.
+
+  return vloc_msrpResp;
+}//f_createMsrpResponseSendTemplate
+
+/*********************************************************
+* Function: f_createMsrpResponseReceiveTemplate
+*
+* Purpose: To create a receiving template variable type of MSRP Response.
+*
+* References: -
+
+* Parameters: 
+*  p_response - input parameters how to fill the values in
+*
+* Return Value:
+*  MsrpResponse
+*
+* Detailed Comments:
+*  It creates a template variable to be received. If the input structure of  has not filled in with other values than "omit",
+*  the respective field will be filled in with its default value as follows:
+*  Field             Default value: 
+*  responseStart     { transactId:=?,statusCode:=?, comment:=* } 
+*  
+*  toPath            {
+*                      {
+*                        msrpScheme:="msrp", 
+*                        authority := { userinfo := *, host :=?, portField:=* },
+*                        sessionId := *, //see below
+*                        transport:= "tcp"
+*                        uriParameter := *; //with filter
+*                      }
+*                    },
+   toPath[0].sessionId      filtered according to the specs and p_msrpVersion
+*  fromPath                 as toPath
+*  header.messageId         *
+*  header.successReport     *
+*  header.failureReport     *
+*  header.byteRange         *
+*  headers.header.status    * 
+*  headers.header.extHeader *
+*  endLine                  { transactId := ?, continuationFlag := ?}
+************************************************************/
+
+function f_createMsrpResponseReceiveTemplate(in Struct_MsrpResponseInfo p_response, in  MsrpVersion p_msrpVersion )
+return template MsrpResponse
+{
+  var template MsrpResponse vloc_msrpResp;
+
+  //=== default settings ======
+  vloc_msrpResp.responseStart := { transactId:=?,statusCode:=?, comment:=* }
+
+  //vloc_msrpResp.headers.toPath :
+  vloc_msrpResp.headers.toPath[0].msrpScheme:="msrp";
+  vloc_msrpResp.headers.toPath[0].authority.userinfo := *;
+  vloc_msrpResp.headers.toPath[0].authority.host := ?;
+  vloc_msrpResp.headers.toPath[0].authority.portField := *;
+
+  if( p_msrpVersion == msrp_v12 ) { vloc_msrpResp.headers.toPath[0].sessionId := t_sessionId_v12; }
+  else { /*v18*/ vloc_msrpResp.headers.toPath[0].sessionId := t_sessionId_v19; }
+
+  vloc_msrpResp.headers.toPath[0].transport := "tcp";
+  vloc_msrpResp.headers.toPath[0].uriParameter := tr_uriParameter;
+
+  //vloc_msrpResp.headers.fromPath :
+  vloc_msrpResp.headers.fromPath[0].msrpScheme:="msrp";
+  vloc_msrpResp.headers.fromPath[0].authority.userinfo := *;
+  vloc_msrpResp.headers.fromPath[0].authority.host := ?;
+  vloc_msrpResp.headers.fromPath[0].authority.portField := *;
+
+  if( p_msrpVersion == msrp_v12 ) { vloc_msrpResp.headers.fromPath[0].sessionId := t_sessionId_v12;}
+  else { /*v19*/ vloc_msrpResp.headers.fromPath[0].sessionId := t_sessionId_v19 ;}
+
+  vloc_msrpResp.headers.fromPath[0].transport := "tcp";
+  vloc_msrpResp.headers.fromPath[0].uriParameter := tr_uriParameter;
+
+  vloc_msrpResp.headers.header.messageId := *;
+  vloc_msrpResp.headers.header.successReport := *;
+  vloc_msrpResp.headers.header.failureReport := *;
+  vloc_msrpResp.headers.header.byteRange := *;
+  vloc_msrpResp.headers.header.status :=*;
+  vloc_msrpResp.headers.header.extHeader := *;
+
+  vloc_msrpResp.endLine := { transactId := ?, continuationFlag := ? }
+
+  //===Response Start:====
+  if( ispresent( p_response.transactId ) )
+  {
+    vloc_msrpResp.responseStart.transactId := p_response.transactId;
+    vloc_msrpResp.endLine.transactId := p_response.transactId;
+  }
+  else
+  {
+    log("WARNING:[f_createMsrpResponseSendTemplate]: transactionId not defined, empty string used");
+  }
+
+  if( ispresent( p_response.statusCode ) )
+  {
+    vloc_msrpResp.responseStart.statusCode := p_response.statusCode;
+  }
+  if( ispresent( p_response.comment ) )
+  {
+    vloc_msrpResp.responseStart.comment := p_response.comment;
+  }
+
+  //=== Response Header:====  
+  if( ispresent( p_response.toPath ) )
+  {
+    vloc_msrpResp.headers.toPath := p_response.toPath;
+  }
+  else
+  {
+    log("WARNING:[f_createMsrpResponseSendTemplate]: toPath not defined, empty string used");
+  }
+
+  if( ispresent( p_response.fromPath ) )
+  {
+    vloc_msrpResp.headers.fromPath := p_response.fromPath;
+  }
+  else
+  {
+    log("WARNING:[f_createMsrpResponseSendTemplate]: fromPath not defined, empty string used");
+  }
+
+  if( ispresent( p_response.messageId))
+  {
+    vloc_msrpResp.headers.header.messageId := p_response.messageId;
+  }
+  if( ispresent( p_response.messageId))
+  {
+    vloc_msrpResp.headers.header.messageId := p_response.messageId;
+  }
+  //byteRange omitted.
+
+  //success:
+  if( ispresent( p_response.successReport))
+  {
+    vloc_msrpResp.headers.header.successReport := p_response.successReport;
+  }
+  //failure:
+  if( ispresent( p_response.failureReport))
+  {
+    vloc_msrpResp.headers.header.failureReport := p_response.failureReport;
+  }
+
+  if(ispresent( p_response.status))
+  {
+    vloc_msrpResp.headers.header.status := p_response.status;
+  }
+
+  if( ispresent( p_response.extHeader))
+  {
+    vloc_msrpResp.headers.header.extHeader := p_response.extHeader;
+  }
+  //==== End Line ====
+  //transactId       - already handled
+  //continuationFlag - already handled.
+
+  log(">>>DEBUG: [f_createMsrpResponseReceiveTemplate] - vloc_msrpResp: ", vloc_msrpResp);
+  return vloc_msrpResp;
+}//f_createMsrpResponseReceiveTemplate
+
+//===================================================================
+//   MSRP Response Ack
+//===================================================================
+//fills statusCode and comment field automatically, even force it against the user:
+function f_createMsrpResponseAckSendTemplate(in Struct_MsrpResponseInfo p_response, in  MsrpVersion p_msrpVersion)
+return template MsrpResponse
+{
+  var template MsrpResponse vloc_msrpResp :=  f_createMsrpResponseSendTemplate(p_response, p_msrpVersion);
+  //Modification:
+  vloc_msrpResp.responseStart.statusCode:=200;
+  vloc_msrpResp.responseStart.comment := "OK";
+  return vloc_msrpResp;
+}
+//===================================================================
+//   MSRP Request SEND
+//===================================================================
+
+/*********************************************************
+* Function: f_createMsrpRequestSendTemplate
+*
+* Purpose: To create a sending template variable type of MSRP Request.
+*
+* References: -
+
+* Parameters: -
+*
+* Return Value:
+*   MsrpRequest
+*
+* Detailed Comments:
+*  See f_createMsrpRequestSendTemplate. Method is "SEND"
+*********************************************************/
+function f_createMsrpSendRequestSendTemplate( in Struct_MsrpRequestInfo p_request, in  MsrpVersion p_msrpVersion)
+return template MsrpRequest
+{
+  var template MsrpRequest vloc_msrpReq := f_createMsrpRequestSendTemplate( p_request, p_msrpVersion);
+  //Modification:
+  vloc_msrpReq.requestStart.method := "SEND";
+  return vloc_msrpReq;
+}
+//===================================================================
+//   MSRP Request REPORT
+//===================================================================
+
+/*********************************************************
+* Function: f_createMsrpReportRequestSendTemplate
+*
+* Purpose: To create a sending template variable type of MSRP Request with method name "REPORT"
+*
+* References: -
+
+* Parameters: -
+*
+* Return Value:
+*  MsrpRequest
+*
+* Detailed Comments:
+*  See f_createMsrpRequestSendTemplate but the method is "REPORT"
+*********************************************************/
+
+function f_createMsrpReportRequestSendTemplate( in Struct_MsrpRequestInfo p_request, in  MsrpVersion p_msrpVersion)
+return template MsrpRequest
+{
+  var template MsrpRequest vloc_msrpReq := f_createMsrpRequestSendTemplate( p_request, p_msrpVersion);
+  //Modification:
+  vloc_msrpReq.requestStart.method := "REPORT";
+  //other change ????
+  return vloc_msrpReq;
+}
+
+
+
+}//module

@@ -1,0 +1,38 @@
+<!--
+/******************************************************************************
+* Copyright (c) 2005, 2015  Ericsson AB
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of the Eclipse Public License v1.0
+* which accompanies this distribution, and is available at
+* http://www.eclipse.org/legal/epl-v10.html
+*
+* Contributors:
+* Gabor Szalai
+* Attila Balasko
+* Balasko Jeno
+* Kulcsár Endre
+* Rita Tomasitsne Kovacs
+* Sandor Palugyai
+* Zsolt Szalai
+* Janos Kovesdi
+******************************************************************************/
+//
+//  File:               MSRP_ProtocolModule.grp
+//  Description:        MSRP Protocol Module group file
+//  Rev:                R8A
+//  Prodnr:             CNL 113 467
+//
+-->
+
+<!DOCTYPE TITAN_GUI_FileGroup_file>
+<FileGroup TITAN_version="2.2.pl0" >
+    <File_Group name="MSRP Protocol Module" >
+        <File path="MSRP_EncDec.cc" />
+        <File path="MSRP_Templates.ttcn" />
+        <File path="MSRP_Types.ttcn" />
+        <File path="MSRP_parse.h" />
+        <File path="MSRP_parse_.tab.c" />
+        <File path="MSRP_parse_.tab.h" />
+        <File path="lex.MSRP_parse_.c" />
+    </File_Group>
+</FileGroup>
