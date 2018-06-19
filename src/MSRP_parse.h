@@ -17,7 +17,7 @@
 ******************************************************************************/
 //
 //  File:               MSRP_parse.h
-//  Rev:                R8A
+//  Rev:                R8C
 //  Prodnr:             CNL 113 467
 #ifndef MSRP_parse_parser_H
 #define MSRP_parse_parser_H

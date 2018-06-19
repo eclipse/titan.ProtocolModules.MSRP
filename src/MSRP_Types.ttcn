@@ -18,7 +18,7 @@
 //
 //  File:           MSRP_Types.ttcn
 //  Description:    Types of protocol MSRP v12 and v19 
-//  Rev:            R8A
+//  Rev:            R8C
 //  Prodnr:         CNL 113 467
 //  Reference:      [1] draft-ietf-simple-message-sessions-12
 //                  [2] draft-ietf-simple-message-sessions-19
@@ -104,9 +104,9 @@ type record MsrpUri
   variant (msrpScheme) "END('://')";
   variant (sessionId) "BEGIN('/')";
   variant (sessionId) "TEXT_CODING(,,'[^;]#(,)')";
+  variant (transport) "TEXT_CODING(,,'[^;]#(,)')";
   variant (transport) "BEGIN(';')";
   variant (uriParameter) "BEGIN(';')";
-  variant (uriParameter) "TEXT_CODING(,,'[\w]#(,)')";
 };
 
 type set of MsrpUri MsrpPath

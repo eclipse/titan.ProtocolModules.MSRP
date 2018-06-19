@@ -11756,7 +11756,7 @@ char *MSRP_parse_text;
 ///////////////////////////////////////////////////////////////////////////////
 //
 //  File:               MSRP.l
-//  Rev:                R8A
+//  Rev:                R8C
 //  Prodnr:             CNL 113 467
 //  Updated:            2013-06-26
 //  Contact:            http://ttcn.ericsson.se
